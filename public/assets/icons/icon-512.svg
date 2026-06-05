@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SOP Writer icon">
+  <rect width="512" height="512" rx="52" fill="#234232"/>
+  <path fill="#fff" d="M128 90h192l64 64v268H128z"/>
+  <path fill="#dce7df" d="M320 90v74h64z"/>
+  <path stroke="#234232" stroke-width="21" d="M184 224h144M184 282h144M184 341h102"/>
+</svg>

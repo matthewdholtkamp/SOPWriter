@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Upload an authorized letterhead seal">
+  <circle cx="96" cy="96" r="86" fill="#f3f5f4" stroke="#9ba8a1" stroke-width="4"/>
+  <circle cx="96" cy="96" r="66" fill="none" stroke="#9ba8a1" stroke-width="2" stroke-dasharray="6 6"/>
+  <path fill="#607169" d="M91 52h10v39h39v10h-39v39H91v-39H52V91h39z"/>
+</svg>
