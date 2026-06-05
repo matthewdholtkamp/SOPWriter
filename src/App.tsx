@@ -638,40 +638,34 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
-      <header className="top-bar">
-        <div className="brand-lockup">
+    <div className={`app-shell ${isAssistantOpen ? "assistant-open" : ""}`}>
+      <header className="app-header">
+        <div>
           <span className="brand-mark">SW</span>
           <span className="brand-name">SOP Writer</span>
         </div>
-        <div className="top-actions">
+        <nav aria-label="Utility actions">
           <button
             aria-label="Ask Dr. Holtkamp SOP assistant"
-            className="secondary-button"
+            aria-expanded={isAssistantOpen}
+            className={`header-button ask-header-button ${isAssistantOpen ? "active" : ""}`}
             onClick={() => setAssistantOpen(true)}
             type="button"
           >
-            Ask Dr. Holtkamp
+            <span aria-hidden="true" className="ai-stars">***</span>
+            <span>Ask Dr. Holtkamp</span>
           </button>
           <button
-            className="secondary-button"
+            className="header-button"
             onClick={() => loadSpec(createDefaultSpec(), "Started a new SOP.")}
             type="button"
           >
             New SOP
           </button>
-          <button
-            className="primary-button"
-            disabled={!validation.canGenerate}
-            onClick={handleDownload}
-            type="button"
-          >
-            Generate .docx
-          </button>
-        </div>
+        </nav>
       </header>
 
-      <div className="privacy-banner">
+      <div className="privacy-bar">
         <strong>Local-first.</strong> Drafts stay in this browser. The only runtime network call is the optional assistant message you send.
       </div>
 
@@ -933,60 +927,6 @@ export default function App() {
           <StructuralPreview spec={spec} />
           <CompliancePanel onNavigate={onComplianceNavigate} validation={validation} />
           <ReadinessPanel spec={spec} setSpec={setSpec} />
-          <section className="panel-section">
-            <div className="section-heading-row">
-              <h2>Draft tools</h2>
-            </div>
-            <div className="tool-grid">
-              <button
-                className="secondary-button"
-                onClick={() => downloadText(exportDraft(spec), "sopwriter-draft.json")}
-                type="button"
-              >
-                Save draft JSON
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => importInputRef.current?.click()}
-                type="button"
-              >
-                Load draft JSON
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  const fixed = fixSentenceSpacing(spec);
-                  setSpacingProposal(fixed);
-                  loadSpec(fixed, "Applied two-space sentence spacing where detected.");
-                }}
-                type="button"
-              >
-                Fix sentence spacing
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => {
-                  clearActiveDraft();
-                  loadSpec(createDefaultSpec(), "Cleared local draft data.");
-                }}
-                type="button"
-              >
-                Clear local draft
-              </button>
-            </div>
-            <input
-              accept="application/json,.json"
-              hidden
-              onChange={handleImport}
-              ref={importInputRef}
-              type="file"
-            />
-            {spacingProposal && <p className="helper-text">Sentence spacing fix has been applied to the current draft.</p>}
-            <p className="status-line" role="status">{feedback}</p>
-            <p className="helper-text">
-              Approval authority: {approvalAuthorityLabel(spec.signature.approvalAuthority)}.
-            </p>
-          </section>
         </aside>
       </main>
 
@@ -1001,6 +941,66 @@ export default function App() {
         spec={spec}
         validation={validation}
       />
+
+      <footer className="action-bar">
+        <div className="button-row">
+          <button
+            className="primary-button generate-button"
+            disabled={!validation.canGenerate}
+            onClick={handleDownload}
+            type="button"
+          >
+            Generate .docx
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => downloadText(exportDraft(spec), "sopwriter-draft.json")}
+            type="button"
+          >
+            Save draft JSON
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => importInputRef.current?.click()}
+            type="button"
+          >
+            Load draft JSON
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => {
+              const fixed = fixSentenceSpacing(spec);
+              setSpacingProposal(fixed);
+              loadSpec(fixed, "Applied two-space sentence spacing where detected.");
+            }}
+            type="button"
+          >
+            Fix sentence spacing
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => {
+              clearActiveDraft();
+              loadSpec(createDefaultSpec(), "Cleared local draft data.");
+            }}
+            type="button"
+          >
+            Clear saved draft
+          </button>
+          <input
+            accept="application/json,.json"
+            hidden
+            onChange={handleImport}
+            ref={importInputRef}
+            type="file"
+          />
+        </div>
+        <div className="action-status" role="status">
+          <strong>{validation.canGenerate ? "Ready to generate a GLWCH publication." : "Resolve compliance errors before generating."}</strong>
+          <span>{spacingProposal ? "Sentence spacing fix has been applied. " : ""}{feedback}</span>
+          <span>Approval authority: {approvalAuthorityLabel(spec.signature.approvalAuthority)}.</span>
+        </div>
+      </footer>
     </div>
   );
 }
