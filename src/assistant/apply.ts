@@ -19,6 +19,20 @@ function normalizeStringList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
+export function normalizePublicationNumber(value: string): string {
+  let next = value.trim().replace(/\s+/g, " ");
+  for (let index = 0; index < 3; index += 1) {
+    const previous = next;
+    next = next
+      .replace(/^GLWCH\s+/i, "")
+      .replace(/^(?:regulation|reg|pamphlet|pam)\s*(?:no\.?|number)?\s*/i, "")
+      .replace(/^no\.?\s*/i, "")
+      .trim();
+    if (next === previous) break;
+  }
+  return next;
+}
+
 export function summarizePatchFields(patch: AssistantPatch): string[] {
   return Object.keys(patch).map((field) => FIELD_LABELS[field] ?? field);
 }
@@ -28,7 +42,7 @@ export function applyAssistantPatch(baseSpec: SopSpec, patch: AssistantPatch): S
 
   if (patch.mode !== undefined) next.mode = patch.mode;
   if (patch.documentType !== undefined) next.documentType = patch.documentType;
-  if (patch.publicationNumber !== undefined) next.publicationNumber = patch.publicationNumber.trim();
+  if (patch.publicationNumber !== undefined) next.publicationNumber = normalizePublicationNumber(patch.publicationNumber);
   if (patch.date !== undefined) next.date = patch.date.trim();
   if (patch.proponent !== undefined) next.proponent = patch.proponent.trim();
   if (patch.subject !== undefined) next.subject = patch.subject.trim();
@@ -74,8 +88,10 @@ export function applyAssistantPatch(baseSpec: SopSpec, patch: AssistantPatch): S
 }
 
 export function appliedFieldsFromResponse(response: AssistantResponse): string[] {
-  if (response.changedFields.length > 0) {
-    return response.changedFields.map(({ field }) => field);
+  const fields = new Set<string>();
+  response.changedFields.forEach(({ field }) => fields.add(field));
+  if (response.specPatch) {
+    summarizePatchFields(response.specPatch).forEach((field) => fields.add(field));
   }
-  return response.specPatch ? summarizePatchFields(response.specPatch) : [];
+  return [...fields];
 }

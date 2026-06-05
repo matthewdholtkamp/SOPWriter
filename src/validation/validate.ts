@@ -42,6 +42,11 @@ const TARGETS: Record<string, { stage: SopStage; focusTarget?: string }> = {
   shall: { stage: "review", focusTarget: "compliance-panel" },
   acronym: { stage: "review", focusTarget: "compliance-panel" },
   "sentence-spacing": { stage: "review", focusTarget: "compliance-panel" },
+  "patient-id-npg-reference": { stage: "review", focusTarget: "references-editor" },
+  "patient-id-two-identifiers": { stage: "review", focusTarget: "compliance-panel" },
+  "patient-id-location-identifier": { stage: "review", focusTarget: "compliance-panel" },
+  "patient-id-specimen-labeling": { stage: "review", focusTarget: "compliance-panel" },
+  "patient-id-emergency-deferral": { stage: "review", focusTarget: "compliance-panel" },
   "legacy-verbiage": { stage: "readiness", focusTarget: "readiness-panel" },
   "move-review": { stage: "readiness", focusTarget: "readiness-panel" },
   "readiness-routing": { stage: "readiness", focusTarget: "readiness-panel" }
@@ -128,6 +133,37 @@ function hasLocationSensitiveProcedure(spec: SopSpec): boolean {
     });
     return found;
   });
+}
+
+function isPatientIdentificationPublication(text: string): boolean {
+  return /\b(?:patient identification|patient identifiers?|identify patients?|right patient)\b/i.test(text);
+}
+
+function hasTwoIdentifierLanguage(text: string): boolean {
+  return /\b(?:two patient identifiers|two identifiers|at least two)\b/i.test(text);
+}
+
+function hasCurrentPatientIdNpgLanguage(text: string): boolean {
+  return /\b(?:National Performance Goals?|NPG\.?0?1\.?0?1\.?0?1|NPG\s*#?\s*1|Right Patient,\s*Right Care)\b/i.test(text);
+}
+
+function hasLocationIdentifierProhibition(text: string): boolean {
+  const restrictedIdentifier = String.raw`(?:room numbers?|bed assignments?|bed numbers?|physical locations?|locations?)`;
+  const prohibition = String.raw`(?:not|never|must not|will not|cannot|may not|prohibit(?:ed|s)?|not acceptable|not be used|not use|do not use)`;
+  return new RegExp(`${restrictedIdentifier}[\\s\\S]{0,140}${prohibition}[\\s\\S]{0,100}identif`, "i").test(text) ||
+    new RegExp(`${restrictedIdentifier}[\\s\\S]{0,140}identif[\\s\\S]{0,100}${prohibition}`, "i").test(text) ||
+    new RegExp(`${prohibition}[\\s\\S]{0,140}${restrictedIdentifier}[\\s\\S]{0,100}identif`, "i").test(text);
+}
+
+function hasSpecimenLabelingInPatientPresence(text: string): boolean {
+  return /\b(?:specimen|blood|container|tube|label)\b/i.test(text) &&
+    /\b(?:presence of the patient|patient's presence|patient presence|with the patient present|at the bedside)\b/i.test(text);
+}
+
+function hasBroadEmergencyDeferral(text: string): boolean {
+  return /\bidentification\s+(?:may|can|will)?\s*be\s*deferred\b/i.test(text) ||
+    /\bdefer(?:red)?\s+(?:patient\s+)?identification\b/i.test(text) ||
+    /\bdeferred\s+until\s+the\s+patient\s+is\s+stabili[sz]ed\b/i.test(text);
 }
 
 export function validateSop(spec: SopSpec): ValidationResult {
@@ -218,6 +254,23 @@ export function validateSop(spec: SopSpec): ValidationResult {
   }
   if (/GLWACH|General Leonard Wood Army Community Hospital/.test(text)) {
     items.push(item("legacy-verbiage", "Legacy hospital verbiage", "warn", "Residual GLWACH or old hospital-name text remains."));
+  }
+  if (isPatientIdentificationPublication(text)) {
+    if (!hasCurrentPatientIdNpgLanguage(text)) {
+      items.push(item("patient-id-npg-reference", "Patient identification reference", "warn", "For new 2026 hospital patient-identification publications, reference Joint Commission Hospital National Performance Goals NPG #1, Right Patient, Right Care."));
+    }
+    if (!hasTwoIdentifierLanguage(text)) {
+      items.push(item("patient-id-two-identifiers", "Patient identification", "warn", "Patient-identification publications should require at least two patient identifiers."));
+    }
+    if (!hasLocationIdentifierProhibition(text)) {
+      items.push(item("patient-id-location-identifier", "Location as identifier", "warn", "State that room number, bed assignment, or physical location must not be used as a patient identifier."));
+    }
+    if (!hasSpecimenLabelingInPatientPresence(text)) {
+      items.push(item("patient-id-specimen-labeling", "Specimen labeling", "warn", "Cover labeling blood or specimen containers in the presence of the patient after identity verification."));
+    }
+    if (hasBroadEmergencyDeferral(text)) {
+      items.push(item("patient-id-emergency-deferral", "Emergency identification", "warn", "Avoid broad emergency language that defers identification until stabilization; use temporary identity and reconciliation procedures instead."));
+    }
   }
   const locationSensitive = hasLocationSensitiveProcedure(spec);
   items.push(

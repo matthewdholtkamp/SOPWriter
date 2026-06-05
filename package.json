@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "qa:docs": "vite-node scripts/generateQaDocs.ts",
+    "stress:ask": "vite-node scripts/stressTestAskDrHoltkamp.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest run tests/ui.test.tsx"

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyAssistantPatch, appliedFieldsFromResponse } from "../src/assistant/apply";
+import { applyAssistantPatch, appliedFieldsFromResponse, normalizePublicationNumber } from "../src/assistant/apply";
 import { requestSopAssistant } from "../src/assistant/client";
 import {
   ASSISTANT_FALLBACK_MODEL,
@@ -42,6 +42,17 @@ describe("SOP assistant schemas", () => {
     expect(next.glossary.acronyms[0].term).toBe("MTF");
   });
 
+  it("normalizes assistant publication numbers before saving", () => {
+    expect(normalizePublicationNumber("GLWCH REG 40-1")).toBe("40-1");
+    expect(normalizePublicationNumber("GLWCH Regulation No. 40-[TBD]")).toBe("40-[TBD]");
+    expect(normalizePublicationNumber("Pamphlet No. 40-7")).toBe("40-7");
+
+    const next = applyAssistantPatch(createSyntheticSpec(), {
+      publicationNumber: "GLWCH Regulation No. 40-1"
+    });
+    expect(next.publicationNumber).toBe("40-1");
+  });
+
   it("parses response shape with specPatch", () => {
     const response = assistantResponseSchema.parse({
       assistantMessage: "Updated the SOP.",
@@ -52,6 +63,27 @@ describe("SOP assistant schemas", () => {
       questions: []
     });
     expect(appliedFieldsFromResponse(response)).toEqual(["subject"]);
+  });
+
+  it("shows both assistant-reported and actual patch fields", () => {
+    const response = assistantResponseSchema.parse({
+      assistantMessage: "Updated the SOP.",
+      action: "applyPatch",
+      specPatch: {
+        publicationNumber: "40-1",
+        subject: "Patient Identification",
+        enclosures: { procedures: [{ text: "Verify identity.", children: [] }] }
+      },
+      changedFields: [{ field: "subject" }],
+      warnings: [],
+      questions: []
+    });
+
+    expect(appliedFieldsFromResponse(response)).toEqual([
+      "subject",
+      "publication number",
+      "enclosures"
+    ]);
   });
 
   it("calls the shared Worker in JSON mode without a Gemini responseSchema", async () => {
@@ -95,6 +127,8 @@ describe("SOP assistant schemas", () => {
     expect(body.stream).toBe(false);
     expect(body.generationConfig.responseMimeType).toBe("application/json");
     expect(body.generationConfig).not.toHaveProperty("responseSchema");
+    expect(body.systemInstruction.parts[0].text).toContain("publicationNumber");
+    expect(body.systemInstruction.parts[0].text).toContain("National Performance Goals");
     expect(JSON.stringify(body)).not.toContain("GEMINI_API_KEY");
     expect(JSON.stringify(body)).not.toContain("Legacy text that should not be echoed");
   });
