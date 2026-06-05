@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  base: "/SOP/",
+  base: "/SOPWriter/",
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
@@ -14,7 +14,7 @@ export default defineConfig({
         theme_color: "#1f5e4f",
         background_color: "#eef2f1",
         display: "standalone",
-        start_url: "/SOP/",
+        start_url: "/SOPWriter/",
         icons: [
           {
             src: "assets/icons/icon-192.svg",

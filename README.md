@@ -29,9 +29,7 @@ npm run build
 npm run dev
 ```
 
-The Vite production base is `/SOP/` for GitHub project Pages. The repository is private by default;
-GitHub Pages deployment requires making the repo public or using an account plan that supports Pages
-for private repositories.
+The Vite production base is `/SOPWriter/` for GitHub project Pages.
 
 ## Publication Identity
 
