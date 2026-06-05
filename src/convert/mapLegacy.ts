@@ -39,7 +39,51 @@ function titleCase(value: string): string {
     .replace(/\bThe\b/g, "the");
 }
 
+function cleanTitleLine(line: string): string {
+  return cleanLine(line)
+    .replace(/\s+[-–—]\s*$/, "")
+    .replace(/\s+/g, " ");
+}
+
+function isLegacyCoverStop(line: string): boolean {
+  return /^(?:Headquarters|USA MEDDAC|Fort Leonard Wood|UNCLASSIFIED|Summary of Changes|DEPARTMENT OF THE ARMY|General Leonard Wood|No\.|MEDDAC\s+(?:Reg|Pam)\b|\d+$)/i.test(line) ||
+    /^\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|January|February|March|April|May|June|July|August|September|October|November|December)/i.test(line);
+}
+
+function isFunctionalArea(line: string): boolean {
+  return /^(?:Medical Services)$/i.test(line);
+}
+
+function detectCoverTitle(lines: string[]): string {
+  const designationIndex = lines.findIndex((line) =>
+    /\bMEDDAC\s+(?:Reg(?:ulation)?|Pam(?:phlet)?)\s+\d+-\d+\b/i.test(line)
+  );
+  if (designationIndex < 0) return "";
+
+  const titleLines: string[] = [];
+  for (const line of lines.slice(designationIndex + 1, designationIndex + 8)) {
+    if (isLegacyCoverStop(line)) break;
+    if (isFunctionalArea(line)) continue;
+    titleLines.push(cleanTitleLine(line));
+  }
+  return titleLines.join(" ");
+}
+
+function detectBodyTitle(lines: string[], number: string): string {
+  const numberIndex = lines.findIndex((line) => new RegExp(`^No\\.\\s*${number}\\b`, "i").test(line));
+  if (numberIndex < 0) return "";
+
+  const titleLines: string[] = [];
+  for (const line of lines.slice(numberIndex + 1, numberIndex + 6)) {
+    if (/^\d+(?:-\d+)?\.?\s+/.test(line) || isLegacyCoverStop(line)) break;
+    if (isFunctionalArea(line)) continue;
+    titleLines.push(cleanTitleLine(line));
+  }
+  return titleLines.join(" ");
+}
+
 function detectLegacyIdentity(text: string, documentType: DocumentType) {
+  const lines = text.split(/\r?\n/).map(cleanLine).filter(Boolean);
   const designationMatch = text.match(/\bMEDDAC\s+(Reg(?:ulation)?|Pam(?:phlet)?)\s+(\d+-\d+)\b/i);
   const sourceDesignation = designationMatch
     ? `MEDDAC ${/^pam/i.test(designationMatch[1]) ? "Pam" : "Reg"} ${designationMatch[2]}`
@@ -49,12 +93,14 @@ function detectLegacyIdentity(text: string, documentType: DocumentType) {
     text.match(/\b(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4})\b/i)?.[1] ??
     text.match(/\b([A-Z][a-z]+ \d{1,2}, \d{4})\b/)?.[1] ??
     "[DATE]";
+  const coverTitle = detectCoverTitle(lines);
+  const bodyTitle = number ? detectBodyTitle(lines, number) : "";
   const subjectLine =
     text.match(/\bSUBJECT:\s*([^\n]+)/i)?.[1] ??
     text.match(/\b(?:Regulation|Pamphlet)\s+\d+-\d+\s+(.+)/i)?.[1] ??
     "";
   const sourceTitle = titleCase(
-    cleanLine(subjectLine)
+    cleanLine(coverTitle || bodyTitle || subjectLine)
       .replace(/\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4}/i, "")
       .replace(/\bMEDDAC\b.*$/i, "")
   );
@@ -104,7 +150,7 @@ function referencesFromText(text: string): string[] {
     .split(/\n+/)
     .map(cleanLine)
     .filter(Boolean)
-    .map((line) => line.replace(/^\(?[a-z]\)?\.?\s*/i, ""))
+    .map((line) => line.replace(/^(?:\([a-z]\)|[a-z]\.)\s+/i, ""))
     .filter((line) => line.length > 6);
 }
 

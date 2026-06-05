@@ -34,7 +34,40 @@ JSON response shape:
 {
   "assistantMessage": "Brief explanation for the user.",
   "action": "applyPatch" | "askClarifyingQuestion" | "noChange",
-  "specPatch": {},
+  "specPatch": {
+    "mode": "author" | "convert",
+    "documentType": "regulation" | "pamphlet",
+    "publicationNumber": "string",
+    "date": "Month Day, Year or [DATE]",
+    "proponent": "string",
+    "subject": "string",
+    "references": ["string"],
+    "sections": {
+      "purpose": [{ "heading": "optional string", "text": "string", "children": [] }],
+      "applicability": [{ "text": "string", "children": [] }],
+      "policyImplementation": [{ "text": "string", "children": [] }],
+      "canceledDocuments": [{ "text": "string", "children": [] }],
+      "responsibilitiesBrief": [{ "text": "string", "children": [] }],
+      "proceduresBrief": [{ "text": "string", "children": [] }],
+      "proponentAndWaivers": [{ "text": "string", "children": [] }],
+      "releasability": "public" | "notPublic",
+      "effectiveDate": { "effectiveOnSignature": true, "expiresYears": 10 }
+    },
+    "enclosures": {
+      "responsibilities": [{ "heading": "string", "text": "string", "children": [] }],
+      "procedures": [{ "heading": "string", "text": "string", "children": [] }],
+      "appendices": [{ "title": "string", "body": [{ "text": "string", "children": [] }] }]
+    },
+    "glossary": {
+      "acronyms": [{ "term": "string", "meaning": "string" }],
+      "definitions": [{ "term": "string", "definition": "string" }]
+    },
+    "readiness": {
+      "formattingConverted": true,
+      "hospitalNameUpdated": true,
+      "acronymUpdated": true
+    }
+  },
   "changedFields": [{ "field": "sections.responsibilitiesBrief", "reason": "why changed" }],
   "warnings": ["short warning"],
   "questions": ["short question"]
@@ -42,107 +75,14 @@ JSON response shape:
 
 Omit specPatch keys that should not change. Use "askClarifyingQuestion" when required facts are missing.`;
 
-function paragraphResponseSchema(depth = 0): Record<string, unknown> {
-  return {
-    type: "OBJECT",
-    properties: {
-      heading: { type: "STRING" },
-      text: { type: "STRING" },
-      children: {
-        type: "ARRAY",
-        items:
-          depth >= 5
-            ? {
-                type: "OBJECT",
-                properties: {
-                  text: { type: "STRING" },
-                  children: { type: "ARRAY", items: { type: "OBJECT" } }
-                },
-                required: ["text", "children"]
-              }
-            : paragraphResponseSchema(depth + 1)
-      }
-    },
-    required: ["text", "children"]
-  };
-}
-
-const assistantGeminiResponseSchema = {
-  type: "OBJECT",
-  properties: {
-    assistantMessage: { type: "STRING" },
-    action: { type: "STRING", enum: ["applyPatch", "askClarifyingQuestion", "noChange"] },
-    specPatch: {
-      type: "OBJECT",
-      properties: {
-        mode: { type: "STRING", enum: ["author", "convert"] },
-        documentType: { type: "STRING", enum: ["regulation", "pamphlet"] },
-        publicationNumber: { type: "STRING" },
-        date: { type: "STRING" },
-        proponent: { type: "STRING" },
-        subject: { type: "STRING" },
-        references: { type: "ARRAY", items: { type: "STRING" } },
-        sections: {
-          type: "OBJECT",
-          properties: {
-            purpose: { type: "ARRAY", items: paragraphResponseSchema() },
-            applicability: { type: "ARRAY", items: paragraphResponseSchema() },
-            policyImplementation: { type: "ARRAY", items: paragraphResponseSchema() },
-            canceledDocuments: { type: "ARRAY", items: paragraphResponseSchema() },
-            responsibilitiesBrief: { type: "ARRAY", items: paragraphResponseSchema() },
-            proceduresBrief: { type: "ARRAY", items: paragraphResponseSchema() },
-            informationCollection: { type: "ARRAY", items: paragraphResponseSchema() },
-            proponentAndWaivers: { type: "ARRAY", items: paragraphResponseSchema() },
-            releasability: { type: "STRING", enum: ["public", "notPublic"] },
-            forms: { type: "ARRAY", items: paragraphResponseSchema() },
-            summaryOfChanges: { type: "ARRAY", items: paragraphResponseSchema() }
-          }
-        },
-        enclosures: {
-          type: "OBJECT",
-          properties: {
-            responsibilities: { type: "ARRAY", items: paragraphResponseSchema() },
-            procedures: { type: "ARRAY", items: paragraphResponseSchema() }
-          }
-        },
-        glossary: {
-          type: "OBJECT",
-          properties: {
-            acronyms: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: { term: { type: "STRING" }, meaning: { type: "STRING" } },
-                required: ["term", "meaning"]
-              }
-            },
-            definitions: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: { term: { type: "STRING" }, definition: { type: "STRING" } },
-                required: ["term", "definition"]
-              }
-            }
-          }
-        }
-      }
-    },
-    changedFields: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          field: { type: "STRING" },
-          reason: { type: "STRING" }
-        },
-        required: ["field"]
-      }
-    },
-    warnings: { type: "ARRAY", items: { type: "STRING" } },
-    questions: { type: "ARRAY", items: { type: "STRING" } }
-  },
-  required: ["assistantMessage", "action", "changedFields", "warnings", "questions"]
+type JsonRecord = Record<string, any>;
+type NormalizedAssistantResponse = {
+  assistantMessage: string;
+  action: "applyPatch" | "askClarifyingQuestion" | "noChange";
+  specPatch: unknown | null;
+  changedFields: Array<{ field: string; reason?: string }>;
+  warnings: string[];
+  questions: string[];
 };
 
 function extractJson(text: string): unknown {
@@ -173,11 +113,367 @@ function geminiText(data: unknown): string {
     .trim();
 }
 
-function contextForAssistant(spec: SopSpec, validationItems: ComplianceItem[]): string {
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null;
+}
+
+function stringList(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value.map((entry) => entry.trim()).filter(Boolean)
+    : null;
+}
+
+function booleanPatch(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function looksLikeJsonBlock(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    /^```(?:json)?/i.test(trimmed) ||
+    trimmed.startsWith("{") ||
+    /"specPatch"|"assistantMessage"|"sections"|"enclosures"|"subject"/.test(trimmed)
+  );
+}
+
+function patchChangedFields(patch: unknown): Array<{ field: string }> {
+  const record = asRecord(patch);
+  return record ? Object.keys(record).map((field) => ({ field })) : [];
+}
+
+function sanitizeParagraph(value: unknown, depth = 0): JsonRecord | null {
+  if (typeof value === "string") {
+    return value.trim() ? { text: value.trim(), children: [] } : null;
+  }
+  const record = asRecord(value);
+  if (!record || typeof record.text !== "string") return null;
+  const rawChildren = record.children === undefined ? [] : record.children;
+  if (!Array.isArray(rawChildren)) return null;
+  if (depth >= 5 && rawChildren.length > 0) return null;
+  const children = rawChildren.map((child) => sanitizeParagraph(child, depth + 1));
+  if (children.some((child) => !child)) return null;
+
+  const paragraph: JsonRecord = {
+    text: record.text.trim(),
+    children
+  };
+  if (typeof record.heading === "string" && record.heading.trim()) {
+    paragraph.heading = record.heading.trim();
+  }
+  return paragraph;
+}
+
+function sanitizeParagraphList(value: unknown): JsonRecord[] | null {
+  if (!Array.isArray(value)) return null;
+  const paragraphs = value.map((entry) => sanitizeParagraph(entry));
+  if (paragraphs.some((paragraph) => !paragraph)) return null;
+  return paragraphs as JsonRecord[];
+}
+
+function sanitizeSections(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const patch: JsonRecord = {};
+  const paragraphFields = [
+    "purpose",
+    "applicability",
+    "policyImplementation",
+    "responsibilitiesBrief",
+    "proceduresBrief",
+    "proponentAndWaivers"
+  ];
+  const nullableParagraphFields = [
+    "canceledDocuments",
+    "informationCollection",
+    "forms",
+    "summaryOfChanges"
+  ];
+
+  for (const field of paragraphFields) {
+    const paragraphs = sanitizeParagraphList(record[field]);
+    if (paragraphs) patch[field] = paragraphs;
+  }
+  for (const field of nullableParagraphFields) {
+    if (record[field] === null) {
+      patch[field] = null;
+    } else {
+      const paragraphs = sanitizeParagraphList(record[field]);
+      if (paragraphs) patch[field] = paragraphs;
+    }
+  }
+  if (record.releasability === "public" || record.releasability === "notPublic") {
+    patch.releasability = record.releasability;
+  }
+
+  const effectiveDate = asRecord(record.effectiveDate);
+  if (effectiveDate) {
+    const nextEffectiveDate: JsonRecord = {};
+    if (typeof effectiveDate.effectiveOnSignature === "boolean") {
+      nextEffectiveDate.effectiveOnSignature = effectiveDate.effectiveOnSignature;
+    }
+    if (
+      typeof effectiveDate.expiresYears === "number" &&
+      Number.isInteger(effectiveDate.expiresYears) &&
+      effectiveDate.expiresYears >= 1 &&
+      effectiveDate.expiresYears <= 30
+    ) {
+      nextEffectiveDate.expiresYears = effectiveDate.expiresYears;
+    }
+    if (Object.keys(nextEffectiveDate).length > 0) patch.effectiveDate = nextEffectiveDate;
+  }
+
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeSignature(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const patch: JsonRecord = {};
+  for (const field of ["name", "rankBranch"]) {
+    if (typeof record[field] === "string") patch[field] = record[field].trim();
+  }
+  const title = stringList(record.title);
+  if (title && title.length > 0) patch.title = title;
+  if (record.approvalAuthority === "commander" || record.approvalAuthority === "deputy") {
+    patch.approvalAuthority = record.approvalAuthority;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeEnclosures(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const patch: JsonRecord = {};
+  for (const field of ["responsibilities", "procedures"]) {
+    const paragraphs = sanitizeParagraphList(record[field]);
+    if (paragraphs) patch[field] = paragraphs;
+  }
+  if (Array.isArray(record.appendices)) {
+    const appendices = record.appendices
+      .map((appendix) => {
+        const appendixRecord = asRecord(appendix);
+        const body = sanitizeParagraphList(appendixRecord?.body);
+        return appendixRecord && typeof appendixRecord.title === "string" && body
+          ? { title: appendixRecord.title.trim(), body }
+          : null;
+      })
+      .filter(Boolean);
+    if (appendices.length > 0) patch.appendices = appendices;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeGlossary(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const patch: JsonRecord = {};
+  if (Array.isArray(record.acronyms)) {
+    const acronyms = record.acronyms
+      .map((entry) => {
+        const entryRecord = asRecord(entry);
+        return entryRecord &&
+          typeof entryRecord.term === "string" &&
+          typeof entryRecord.meaning === "string"
+          ? { term: entryRecord.term.trim(), meaning: entryRecord.meaning.trim() }
+          : null;
+      })
+      .filter(Boolean);
+    if (acronyms.length > 0) patch.acronyms = acronyms;
+  }
+  if (Array.isArray(record.definitions)) {
+    const definitions = record.definitions
+      .map((entry) => {
+        const entryRecord = asRecord(entry);
+        return entryRecord &&
+          typeof entryRecord.term === "string" &&
+          typeof entryRecord.definition === "string"
+          ? { term: entryRecord.term.trim(), definition: entryRecord.definition.trim() }
+          : null;
+      })
+      .filter(Boolean);
+    if (definitions.length > 0) patch.definitions = definitions;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeLegacy(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const required = ["sourceDesignation", "sourceTitle", "sourceDate", "ingestedText"];
+  if (!required.every((field) => typeof record[field] === "string")) return null;
+  return {
+    sourceDesignation: record.sourceDesignation.trim(),
+    sourceTitle: record.sourceTitle.trim(),
+    sourceDate: record.sourceDate.trim(),
+    ingestedText: record.ingestedText
+  };
+}
+
+function sanitizeReadiness(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const patch: JsonRecord = {};
+  for (const field of [
+    "formattingConverted",
+    "hospitalNameUpdated",
+    "acronymUpdated",
+    "proceduresReviewedForMove",
+    "affectedAreasReviewed",
+    "deputyLaneReviewed"
+  ]) {
+    const value = booleanPatch(record[field]);
+    if (value !== undefined) patch[field] = value;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizePatch(value: unknown): JsonRecord | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const patch: JsonRecord = {};
+  if (record.mode === "author" || record.mode === "convert") patch.mode = record.mode;
+  if (record.documentType === "regulation" || record.documentType === "pamphlet") {
+    patch.documentType = record.documentType;
+  }
+  for (const field of ["publicationNumber", "date", "proponent", "subject"]) {
+    if (typeof record[field] === "string") patch[field] = record[field].trim();
+  }
+  const references = stringList(record.references);
+  if (references) patch.references = references;
+
+  const sections = sanitizeSections(record.sections);
+  if (sections) patch.sections = sections;
+  const signature = sanitizeSignature(record.signature);
+  if (signature) patch.signature = signature;
+  const enclosures = sanitizeEnclosures(record.enclosures);
+  if (enclosures) patch.enclosures = enclosures;
+  const glossary = sanitizeGlossary(record.glossary);
+  if (glossary) patch.glossary = glossary;
+  if (record.legacy === null) {
+    patch.legacy = null;
+  } else {
+    const legacy = sanitizeLegacy(record.legacy);
+    if (legacy) patch.legacy = legacy;
+  }
+  const readiness = sanitizeReadiness(record.readiness);
+  if (readiness) patch.readiness = readiness;
+
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sanitizeChangedFields(value: unknown, fallbackPatch: unknown): Array<{ field: string; reason?: string }> {
+  if (!Array.isArray(value)) return patchChangedFields(fallbackPatch);
+  return value
+    .map((entry) => {
+      const record = asRecord(entry);
+      if (!record || typeof record.field !== "string") return null;
+      return typeof record.reason === "string"
+        ? { field: record.field, reason: record.reason }
+        : { field: record.field };
+    })
+    .filter(Boolean) as Array<{ field: string; reason?: string }>;
+}
+
+function sanitizeAssistantResponse(value: unknown): NormalizedAssistantResponse | null {
+  const record = asRecord(value);
+  if (
+    !record ||
+    typeof record.assistantMessage !== "string" ||
+    typeof record.action !== "string" ||
+    !["applyPatch", "askClarifyingQuestion", "noChange"].includes(record.action)
+  ) {
+    return null;
+  }
+
+  const specPatch =
+    record.specPatch === null || record.specPatch === undefined
+      ? null
+      : sanitizePatch(record.specPatch);
+  if (record.action === "applyPatch" && !specPatch) return null;
+
+  return {
+    assistantMessage: record.assistantMessage,
+    action: record.action as NormalizedAssistantResponse["action"],
+    specPatch,
+    changedFields: sanitizeChangedFields(record.changedFields, specPatch),
+    warnings: stringList(record.warnings) ?? [],
+    questions: stringList(record.questions) ?? []
+  };
+}
+
+function normalizeAssistantResponse(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!record) return value;
+
+  const directResponse = sanitizeAssistantResponse(value);
+  if (directResponse?.action === "applyPatch" && directResponse.specPatch) {
+    return directResponse;
+  }
+
+  if (typeof record.assistantMessage !== "string") return value;
+  if (!looksLikeJsonBlock(record.assistantMessage)) {
+    if (record.action === "applyPatch") {
+      throw new Error("The assistant said it updated the SOP, but did not return usable SOP fields. Please send again.");
+    }
+    return directResponse ?? value;
+  }
+
+  let nestedJson: unknown;
+  try {
+    nestedJson = extractJson(record.assistantMessage);
+  } catch {
+    throw new Error("The assistant returned SOP JSON in chat, but it was not valid enough to apply. Please send again.");
+  }
+
+  const nestedResponse = sanitizeAssistantResponse(nestedJson);
+  if (nestedResponse) return nestedResponse;
+
+  const nestedPatch = sanitizePatch(nestedJson);
+  if (nestedPatch) {
+    return {
+      assistantMessage: "I updated the SOP fields from the assistant response.",
+      action: "applyPatch",
+      specPatch: nestedPatch,
+      changedFields: patchChangedFields(nestedPatch),
+      warnings: stringList(record.warnings) ?? [],
+      questions: stringList(record.questions) ?? []
+    };
+  }
+
+  throw new Error("The assistant returned SOP JSON in chat, but it did not match SOP Writer fields. Please send again.");
+}
+
+function contextForAssistant(
+  userText: string,
+  spec: SopSpec,
+  validationItems: ComplianceItem[],
+  messages: AssistantMessage[]
+): string {
+  const safeSpec: SopSpec = {
+    ...spec,
+    legacy: spec.legacy
+      ? {
+          ...spec.legacy,
+          ingestedText: spec.legacy.ingestedText ? "[legacy text omitted from context]" : ""
+        }
+      : null
+  };
+
   return JSON.stringify(
     {
-      currentSpec: spec,
-      compliance: validationItems.map(({ code, level, detail }) => ({ code, level, detail }))
+      instruction: userText,
+      currentSop: safeSpec,
+      compliance: validationItems.map(({ code, label, level, detail }) => ({
+        code,
+        label,
+        level,
+        detail
+      })),
+      recentConversation: messages.slice(-8).map(({ role, text }) => ({ role, text }))
     },
     null,
     2
@@ -195,48 +491,44 @@ export async function requestSopAssistant({
   userText: string;
   validationItems: ComplianceItem[];
 }): Promise<AssistantResponse> {
-  const body = {
-    model: ASSISTANT_MODEL,
-    fallbackModel: ASSISTANT_FALLBACK_MODEL,
-    stream: false,
-    systemInstruction: { role: "system", parts: [{ text: SOP_ASSISTANT_PROMPT }] },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `Current SOP context:\n${contextForAssistant(spec, validationItems)}`
-          }
-        ]
-      },
-      ...messages
-        .filter((message) => message.role !== "system")
-        .slice(-8)
-        .map((message) => ({
-          role: message.role === "assistant" ? "model" : "user",
-          parts: [{ text: message.text }]
-        })),
-      {
-        role: "user",
-        parts: [{ text: userText }]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.3,
-      responseMimeType: "application/json",
-      responseSchema: assistantGeminiResponseSchema
-    }
-  };
-
   const response = await fetch(`${ASSISTANT_WORKER_URL}?stream=0`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      model: ASSISTANT_MODEL,
+      fallbackModel: ASSISTANT_FALLBACK_MODEL,
+      stream: false,
+      systemInstruction: { role: "system", parts: [{ text: SOP_ASSISTANT_PROMPT }] },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: contextForAssistant(userText, spec, validationItems, messages)
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.35,
+        responseMimeType: "application/json"
+      }
+    })
   });
+
   if (!response.ok) {
-    throw new Error(`SOP Assist request failed with status ${response.status}.`);
+    const detail = (await response.text()).trim().slice(0, 300);
+    throw new Error(
+      detail
+        ? `The Gemini Worker returned ${response.status}: ${detail}`
+        : `The Gemini Worker returned ${response.status}.`
+    );
   }
-  const data = await response.json();
-  const parsed = extractJson(geminiText(data));
-  return assistantResponseSchema.parse(parsed);
+
+  const text = geminiText(await response.json());
+  if (!text) {
+    throw new Error("The assistant returned an empty response.");
+  }
+
+  return assistantResponseSchema.parse(normalizeAssistantResponse(extractJson(text)));
 }

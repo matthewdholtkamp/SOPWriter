@@ -37,6 +37,61 @@ Staff will report falls in Room 2-C.
     expect(result.questions.length).toBeGreaterThan(0);
   });
 
+  it("uses split MEDDAC cover title lines instead of the functional area", () => {
+    const result = convertLegacyText(`
+MEDDAC Regulation 40-43
+Medical Services
+Fall Prevention
+Program
+Headquarters
+USA MEDDAC
+Fort Leonard Wood, Missouri
+23 October 2024
+UNCLASSIFIED
+
+No. 40-43
+Medical Services
+FALL PREVENTION PROGRAM
+1. Purpose. To establish an organization-wide policy.
+2. References.
+a. MEDCOM Reg 40-41, Patient Safety Program.
+`);
+
+    expect(result.spec.subject).toBe("Fall Prevention Program");
+    expect(result.spec.sections.canceledDocuments?.[0].text).toContain(
+      "Fall Prevention Program"
+    );
+  });
+
+  it("preserves unlettered appendix references that begin with A or M", () => {
+    const result = convertLegacyText(
+      `
+MEDDAC Pamphlet 40-7
+Medical Services
+Use of Blood and
+Blood Products
+Headquarters
+USA MEDDAC
+Fort Leonard Wood, Missouri
+14 November 2024
+
+APPENDIX A
+References
+AR 40-3 (Medical, Dental and Veterinary Care)
+MEDDAC Reg 15-1 (Authorized Committees)
+MEDDAC Pam 40-29 (Consent/Refusal of Medical Care)
+`,
+      "pamphlet"
+    );
+
+    expect(result.spec.subject).toBe("Use of Blood and Blood Products");
+    expect(result.spec.references).toEqual([
+      "AR 40-3 (Medical, Dental and Veterinary Care)",
+      "MEDDAC Reg 15-1 (Authorized Committees)",
+      "MEDDAC Pam 40-29 (Consent/Refusal of Medical Care)"
+    ]);
+  });
+
   it("extracts pasted-compatible text from plain text and Word files", async () => {
     const textFile = new File(["Purpose\r\nThis is legacy text."], "legacy.txt", {
       type: "text/plain"
