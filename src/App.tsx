@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from "react";
 import { convertPastedLegacyText, extractLegacyTextFromFile } from "./convert/ingest";
 import type { AssistantMessage } from "./assistant/schema";
+import { createAssistantMessage, runSopAssistant } from "./assistant/session";
 import {
   blockLabel,
   blocksToParagraphs,
@@ -45,6 +46,9 @@ const STAGE_TARGETS: Record<SopStage, string> = {
   review: "review-stage"
 };
 
+const AI_CONVERT_FALLBACK_MESSAGE =
+  "Gemini could not map this automatically, so SOP Writer used the rough converter. Review carefully.";
+
 const SECTION_LABELS: Array<{
   key:
     | "purpose"
@@ -86,6 +90,20 @@ function downloadText(text: string, filename: string): void {
 
 async function readTextFile(file: File): Promise<string> {
   return file.text();
+}
+
+function legacyAiConvertPrompt(legacyText: string): string {
+  return [
+    "Map this legacy MEDDAC policy into the GLWCH DHA-format SOP structure.",
+    "Use the extracted legacy text below. Return an applyPatch response when enough content can be mapped. Use [TBD] for missing local facts and ask questions for facts that need human confirmation.",
+    "Do not include PHI, patient details, classified content, or sensitive personal data.",
+    "Legacy policy text:",
+    legacyText
+  ].join("\n\n");
+}
+
+function sentenceJoin(values: string[]): string {
+  return values.map((value) => value.trim()).filter(Boolean).join(" ");
 }
 
 function StringListEditor({
@@ -435,18 +453,19 @@ function AppendicesEditor({
 }
 
 function ConvertPanel({
-  documentType,
-  onConverted
+  onConvertLegacy
 }: {
-  documentType: DocumentType;
-  onConverted: (spec: SopSpec, message: string) => void;
+  onConvertLegacy: (legacyText: string) => Promise<void>;
 }) {
   const [legacyText, setLegacyText] = useState("");
   const [fileFeedback, setFileFeedback] = useState("");
   const [isReadingFile, setReadingFile] = useState(false);
+  const [isDragActive, setDragActive] = useState(false);
+  const [isMapping, setMapping] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isBusy = isReadingFile || isMapping;
 
-  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const readLegacyFile = async (file: File) => {
     if (!file) return;
     setReadingFile(true);
     setFileFeedback("");
@@ -458,7 +477,45 @@ function ConvertPanel({
       setFileFeedback(error instanceof Error ? error.message : "Could not read that file.");
     } finally {
       setReadingFile(false);
-      event.target.value = "";
+    }
+  };
+
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && !isBusy) await readLegacyFile(file);
+    event.target.value = "";
+  };
+
+  const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+    if (isBusy) return;
+    const file = event.dataTransfer.files?.[0];
+    if (file) await readLegacyFile(file);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false);
+    }
+  };
+
+  const handleConvert = async () => {
+    const text = legacyText.trim();
+    if (!text || isBusy) return;
+    setMapping(true);
+    setFileFeedback("");
+    try {
+      await onConvertLegacy(text);
+    } catch (error) {
+      setFileFeedback(error instanceof Error ? error.message : "Could not convert that text.");
+    } finally {
+      setMapping(false);
     }
   };
 
@@ -467,18 +524,42 @@ function ConvertPanel({
       <div className="section-heading-row">
         <div>
           <h2 id="convert-title">Convert legacy text</h2>
-          <p className="helper-text">Paste text from an old MEDDAC Pam/Reg or load a .docx/.txt file. Files stay on this device.</p>
+          <p className="helper-text">
+            Paste old MEDDAC Pam/Reg text or load a PDF, .docx, or .txt file. File extraction is local; AI Convert sends extracted text to the shared Gemini Worker. Do not use PHI or sensitive personal data.
+          </p>
         </div>
       </div>
-      <label className="field">
-        <span className="field-label">Legacy file</span>
+      <div
+        aria-busy={isBusy}
+        className={`file-drop-zone ${isDragActive ? "drag-active" : ""}`}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <div>
+          <span className="field-label">Legacy file</span>
+          <strong>{isReadingFile ? "Reading policy file..." : "Drop old PAM/REG PDF here"}</strong>
+          <p className="helper-text">Supports PDF, Word .docx, and plain text. Drag a file here or browse from your computer.</p>
+        </div>
+        <button
+          className="secondary-button"
+          disabled={isBusy}
+          onClick={() => fileInputRef.current?.click()}
+          type="button"
+        >
+          Choose file
+        </button>
         <input
+          aria-label="Choose legacy policy file"
           accept=".docx,.txt,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
-          disabled={isReadingFile}
+          className="file-input-native"
+          disabled={isBusy}
           onChange={handleFile}
+          ref={fileInputRef}
           type="file"
         />
-      </label>
+      </div>
       {fileFeedback && <p className="helper-text">{fileFeedback}</p>}
       <textarea
         aria-label="Legacy MEDDAC text"
@@ -489,17 +570,11 @@ function ConvertPanel({
       />
       <button
         className="primary-button"
-        disabled={!legacyText.trim()}
-        onClick={() => {
-          const result = convertPastedLegacyText(legacyText, documentType);
-          onConverted(
-            result.spec,
-            [...result.changes, ...result.warnings, ...result.questions].join(" ")
-          );
-        }}
+        disabled={!legacyText.trim() || isBusy}
+        onClick={handleConvert}
         type="button"
       >
-        Map into SOP
+        {isMapping ? "Mapping with Dr. Holtkamp..." : isReadingFile ? "Reading policy file..." : "Convert with Dr. Holtkamp"}
       </button>
     </section>
   );
@@ -630,6 +705,86 @@ export default function App() {
     setAssistantUndoSpec(null);
   };
 
+  const applyRoughLegacyFallback = (
+    legacyText: string,
+    assistantNotice?: { message?: string; questions?: string[]; warnings?: string[] }
+  ) => {
+    const result = convertPastedLegacyText(legacyText, spec.documentType);
+    const assistantWarnings = [
+      AI_CONVERT_FALLBACK_MESSAGE,
+      assistantNotice?.message,
+      ...(assistantNotice?.warnings ?? [])
+    ].filter(Boolean) as string[];
+
+    setAssistantMessages((current) => [
+      ...current,
+      createAssistantMessage("user", "Convert legacy policy from pasted/uploaded text."),
+      createAssistantMessage(
+        "assistant",
+        "I could not apply a structured AI conversion. SOP Writer used the rough converter.",
+        {
+          warnings: assistantWarnings,
+          questions: assistantNotice?.questions ?? []
+        }
+      )
+    ]);
+    setAssistantOpen(true);
+    loadSpec(
+      result.spec,
+      sentenceJoin([
+        AI_CONVERT_FALLBACK_MESSAGE,
+        ...result.changes,
+        ...result.warnings,
+        ...result.questions
+      ])
+    );
+  };
+
+  const handleLegacyAiConvert = async (legacyText: string) => {
+    const conciseUserMessage = createAssistantMessage(
+      "user",
+      "Convert legacy policy from pasted/uploaded text."
+    );
+    const messagesForRequest = [...assistantMessages, conciseUserMessage];
+
+    try {
+      const { appliedFields, nextSpec, response } = await runSopAssistant({
+        messages: messagesForRequest,
+        spec,
+        userText: legacyAiConvertPrompt(legacyText),
+        validationItems: validation.items
+      });
+
+      if (!nextSpec) {
+        applyRoughLegacyFallback(legacyText, {
+          message: response.assistantMessage,
+          questions: response.questions,
+          warnings: response.warnings
+        });
+        return;
+      }
+
+      setAssistantMessages((current) => [
+        ...current,
+        conciseUserMessage,
+        createAssistantMessage("assistant", response.assistantMessage, {
+          appliedFields,
+          warnings: response.warnings,
+          questions: response.questions
+        })
+      ]);
+      setAssistantOpen(true);
+      applyAssistantSpec(
+        nextSpec,
+        appliedFields.length ? appliedFields : ["legacy policy conversion"]
+      );
+    } catch (error) {
+      applyRoughLegacyFallback(legacyText, {
+        message: error instanceof Error ? error.message : "Gemini did not return a usable response."
+      });
+    }
+  };
+
   const updateSections = (
     key: keyof typeof spec.sections,
     value: (typeof spec.sections)[keyof typeof spec.sections]
@@ -666,7 +821,7 @@ export default function App() {
       </header>
 
       <div className="privacy-bar">
-        <strong>Local-first.</strong> Drafts stay in this browser. The only runtime network call is the optional assistant message you send.
+        <strong>Local-first.</strong> Drafts stay in this browser. The only runtime network call is the optional Ask Dr. Holtkamp or AI Convert request you send.
       </div>
 
       <SopStageStrip activeStage={activeStage} onSelect={navigateToStage} validation={validation} />
@@ -754,8 +909,7 @@ export default function App() {
 
           {spec.mode === "convert" && (
             <ConvertPanel
-              documentType={spec.documentType}
-              onConverted={(nextSpec, message) => loadSpec(nextSpec, message || "Converted legacy text.")}
+              onConvertLegacy={handleLegacyAiConvert}
             />
           )}
 

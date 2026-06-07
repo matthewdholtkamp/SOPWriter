@@ -8,13 +8,14 @@ the browser-side generator owns the Word formatting and downloads a `.docx` loca
 
 - No accounts, database, telemetry, or document backend.
 - Draft JSON autosave uses this browser's `localStorage`.
-- The only runtime network call is the optional Ask Dr. Holtkamp assistant request to the existing
-  Cloudflare Worker at `https://bandaid6.mholtkamp.workers.dev`.
+- The only runtime network call is the optional Ask Dr. Holtkamp or AI Convert request to the
+  existing Cloudflare Worker at `https://bandaid6.mholtkamp.workers.dev`.
 
 ## Current Scope
 
 - Author mode for new GLWCH Regulations and Pamphlets.
-- Convert mode for pasted legacy MEDDAC text, `.docx` uploads, `.txt` uploads, and PDF text extraction.
+- AI-powered Convert mode for pasted legacy MEDDAC text, `.docx` uploads, `.txt` uploads, and PDF
+  text extraction, with a rough local converter fallback when Gemini is unavailable.
 - Deterministic `GLWACH` to `GLWCH` and hospital-name normalization.
 - Human-review warnings for `shall` and move-impacted room/location/workflow language.
 - Readiness panel based on the provided policy checklist and routing email.

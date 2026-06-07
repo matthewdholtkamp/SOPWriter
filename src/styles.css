@@ -336,7 +336,7 @@ summary:focus-visible {
   background: var(--bg-primary);
   box-shadow: inset 0 3px 0 rgb(49 58 45 / 12%);
   min-width: 0;
-  padding: 20px 24px 30px;
+  padding: 20px 24px 104px;
 }
 
 .review-rail {
@@ -598,6 +598,63 @@ legend,
 .convert-surface {
   display: grid;
   gap: 12px;
+}
+
+.file-drop-zone {
+  align-items: center;
+  background:
+    linear-gradient(180deg, rgb(255 184 28 / 7%), rgb(49 58 45 / 2%)),
+    var(--bg-primary);
+  border: 1px dashed rgb(49 58 45 / 34%);
+  border-radius: var(--radius);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  min-height: 116px;
+  padding: 16px;
+  position: relative;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.file-drop-zone.drag-active {
+  background:
+    linear-gradient(180deg, rgb(255 184 28 / 18%), rgb(255 184 28 / 7%)),
+    var(--bg-primary);
+  border-color: var(--gold);
+  box-shadow: var(--focus-ring);
+}
+
+.file-drop-zone strong {
+  color: var(--text-primary);
+  display: block;
+  font-size: 0.91rem;
+  line-height: 1.25;
+  margin-top: 4px;
+}
+
+.file-drop-zone .helper-text {
+  margin-top: 6px;
+  max-width: 54rem;
+}
+
+.file-drop-zone .secondary-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.file-input-native {
+  block-size: 1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  inline-size: 1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
 }
 
 .convert-surface textarea {
@@ -1179,7 +1236,17 @@ button.compliance-item:focus,
   }
 
   .editor-column {
-    padding: 18px 14px 24px;
+    padding: 18px 14px 196px;
+  }
+
+  .file-drop-zone {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .file-drop-zone .secondary-button {
+    justify-content: center;
+    width: 100%;
   }
 
   .review-rail {

@@ -7,24 +7,10 @@ import {
   type KeyboardEvent,
   type SetStateAction
 } from "react";
-import { appliedFieldsFromResponse, applyAssistantPatch } from "../assistant/apply";
-import { requestSopAssistant } from "../assistant/client";
+import { createAssistantMessage, runSopAssistant } from "../assistant/session";
 import type { AssistantMessage } from "../assistant/schema";
 import type { SopSpec } from "../model/sopSpec";
 import type { ValidationResult } from "../validation/validate";
-
-function createMessage(
-  role: AssistantMessage["role"],
-  text: string,
-  update: Partial<AssistantMessage> = {}
-): AssistantMessage {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    text,
-    ...update
-  };
-}
 
 function AssistantMessageCard({ message }: { message: AssistantMessage }) {
   return (
@@ -110,31 +96,27 @@ export function AskDrHoltkampPanel({
     const userText = input.trim();
     if (!userText || isSending) return;
 
-    const userMessage = createMessage("user", userText);
+    const userMessage = createAssistantMessage("user", userText);
     const nextMessages = [...messages, userMessage];
     onMessagesChange(nextMessages);
     setInput("");
     setIsSending(true);
 
     try {
-      const response = await requestSopAssistant({
+      const { appliedFields, nextSpec, response } = await runSopAssistant({
         userText,
         messages: nextMessages,
         spec: specRef.current,
         validationItems: validation.items
       });
-      const appliedFields =
-        response.action === "applyPatch" && response.specPatch
-          ? appliedFieldsFromResponse(response)
-          : [];
 
-      if (response.action === "applyPatch" && response.specPatch) {
-        onApplySpec(applyAssistantPatch(specRef.current, response.specPatch), appliedFields);
+      if (nextSpec) {
+        onApplySpec(nextSpec, appliedFields);
       }
 
       onMessagesChange((current) => [
         ...current,
-        createMessage("assistant", response.assistantMessage, {
+        createAssistantMessage("assistant", response.assistantMessage, {
           appliedFields,
           warnings: response.warnings,
           questions: response.questions
@@ -143,7 +125,7 @@ export function AskDrHoltkampPanel({
     } catch (error) {
       onMessagesChange((current) => [
         ...current,
-        createMessage(
+        createAssistantMessage(
           "assistant",
           error instanceof Error
             ? `I could not apply that yet: ${error.message}`

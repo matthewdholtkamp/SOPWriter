@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyAssistantPatch, appliedFieldsFromResponse, normalizePublicationNumber } from "../src/assistant/apply";
 import { requestSopAssistant } from "../src/assistant/client";
+import { runSopAssistant } from "../src/assistant/session";
 import {
   ASSISTANT_FALLBACK_MODEL,
   ASSISTANT_MODEL,
@@ -63,6 +64,65 @@ describe("SOP assistant schemas", () => {
       questions: []
     });
     expect(appliedFieldsFromResponse(response)).toEqual(["subject"]);
+  });
+
+  it("runs the shared assistant helper and returns an applied next spec", async () => {
+    const payload = {
+      assistantMessage: "I mapped the legacy policy.",
+      action: "applyPatch",
+      specPatch: {
+        mode: "convert",
+        subject: "AI Converted Blood Products",
+        sections: {
+          purpose: [{ text: "This publication maps the legacy blood policy.", children: [] }]
+        }
+      },
+      changedFields: [{ field: "subject" }],
+      warnings: ["Confirm the proponent."],
+      questions: []
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => geminiResponse(JSON.stringify(payload))));
+
+    const { appliedFields, nextSpec, response } = await runSopAssistant({
+      messages: [],
+      spec: createSyntheticSpec({ subject: "Legacy Subject" }),
+      userText: "Map this legacy policy.",
+      validationItems: []
+    });
+
+    expect(response.action).toBe("applyPatch");
+    expect(appliedFields).toEqual(["subject", "mode", "above-signature sections"]);
+    expect(nextSpec?.mode).toBe("convert");
+    expect(nextSpec?.subject).toBe("AI Converted Blood Products");
+  });
+
+  it("returns no next spec when Gemini asks for clarification without a patch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        geminiResponse(
+          JSON.stringify({
+            assistantMessage: "I need the source publication number before mapping.",
+            action: "askClarifyingQuestion",
+            specPatch: null,
+            changedFields: [],
+            warnings: ["No structured patch returned."],
+            questions: ["What is the source publication number?"]
+          })
+        )
+      )
+    );
+
+    const { appliedFields, nextSpec, response } = await runSopAssistant({
+      messages: [],
+      spec: createSyntheticSpec(),
+      userText: "Map this legacy policy.",
+      validationItems: []
+    });
+
+    expect(nextSpec).toBeNull();
+    expect(appliedFields).toEqual([]);
+    expect(response.questions).toEqual(["What is the source publication number?"]);
   });
 
   it("shows both assistant-reported and actual patch fields", () => {
