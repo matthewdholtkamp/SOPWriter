@@ -1,5 +1,6 @@
 import { createDefaultSpec } from "../model/defaultSpec";
-import type { DocumentType, ParagraphNode, SopSpec } from "../model/sopSpec";
+import type { DocumentType, SopSpec } from "../model/sopSpec";
+import { extractLegacyOutline } from "./legacyOutline";
 import { normalizeLegacyVerbiage } from "./normalizeVerbiage";
 
 export type LegacyConversion = {
@@ -9,175 +10,31 @@ export type LegacyConversion = {
   questions: string[];
 };
 
-type SectionMap = Record<string, string>;
-
-const HEADING_ALIASES: Record<string, string> = {
-  purpose: "purpose",
-  references: "references",
-  applicability: "applicability",
-  responsibilities: "responsibilities",
-  procedures: "procedures",
-  procedure: "procedures",
-  definitions: "definitions",
-  glossary: "definitions",
-  "acronyms": "definitions"
-};
-
-function cleanLine(line: string): string {
-  return line
-    .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function titleCase(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\b([a-z])/g, (match) => match.toUpperCase())
-    .replace(/\bAnd\b/g, "and")
-    .replace(/\bOf\b/g, "of")
-    .replace(/\bThe\b/g, "the");
-}
-
-function cleanTitleLine(line: string): string {
-  return cleanLine(line)
-    .replace(/\s+[-–—]\s*$/, "")
-    .replace(/\s+/g, " ");
-}
-
-function isLegacyCoverStop(line: string): boolean {
-  return /^(?:Headquarters|USA MEDDAC|Fort Leonard Wood|UNCLASSIFIED|Summary of Changes|DEPARTMENT OF THE ARMY|General Leonard Wood|No\.|MEDDAC\s+(?:Reg|Pam)\b|\d+$)/i.test(line) ||
-    /^\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|January|February|March|April|May|June|July|August|September|October|November|December)/i.test(line);
-}
-
-function isFunctionalArea(line: string): boolean {
-  return /^(?:Medical Services)$/i.test(line);
-}
-
-function detectCoverTitle(lines: string[]): string {
-  const designationIndex = lines.findIndex((line) =>
-    /\bMEDDAC\s+(?:Reg(?:ulation)?|Pam(?:phlet)?)\s+\d+-\d+\b/i.test(line)
-  );
-  if (designationIndex < 0) return "";
-
-  const titleLines: string[] = [];
-  for (const line of lines.slice(designationIndex + 1, designationIndex + 8)) {
-    if (isLegacyCoverStop(line)) break;
-    if (isFunctionalArea(line)) continue;
-    titleLines.push(cleanTitleLine(line));
-  }
-  return titleLines.join(" ");
-}
-
-function detectBodyTitle(lines: string[], number: string): string {
-  const numberIndex = lines.findIndex((line) => new RegExp(`^No\\.\\s*${number}\\b`, "i").test(line));
-  if (numberIndex < 0) return "";
-
-  const titleLines: string[] = [];
-  for (const line of lines.slice(numberIndex + 1, numberIndex + 6)) {
-    if (/^\d+(?:-\d+)?\.?\s+/.test(line) || isLegacyCoverStop(line)) break;
-    if (isFunctionalArea(line)) continue;
-    titleLines.push(cleanTitleLine(line));
-  }
-  return titleLines.join(" ");
-}
-
-function detectLegacyIdentity(text: string, documentType: DocumentType) {
-  const lines = text.split(/\r?\n/).map(cleanLine).filter(Boolean);
-  const designationMatch = text.match(/\bMEDDAC\s+(Reg(?:ulation)?|Pam(?:phlet)?)\s+(\d+-\d+)\b/i);
-  const sourceDesignation = designationMatch
-    ? `MEDDAC ${/^pam/i.test(designationMatch[1]) ? "Pam" : "Reg"} ${designationMatch[2]}`
-    : `MEDDAC ${documentType === "regulation" ? "Reg" : "Pam"} [NUMBER]`;
-  const number = designationMatch?.[2] ?? "";
-  const sourceDate =
-    text.match(/\b(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4})\b/i)?.[1] ??
-    text.match(/\b([A-Z][a-z]+ \d{1,2}, \d{4})\b/)?.[1] ??
-    "[DATE]";
-  const coverTitle = detectCoverTitle(lines);
-  const bodyTitle = number ? detectBodyTitle(lines, number) : "";
-  const subjectLine =
-    text.match(/\bSUBJECT:\s*([^\n]+)/i)?.[1] ??
-    text.match(/\b(?:Regulation|Pamphlet)\s+\d+-\d+\s+(.+)/i)?.[1] ??
-    "";
-  const sourceTitle = titleCase(
-    cleanLine(coverTitle || bodyTitle || subjectLine)
-      .replace(/\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4}/i, "")
-      .replace(/\bMEDDAC\b.*$/i, "")
-  );
-  return {
-    sourceDesignation,
-    sourceTitle: sourceTitle || "[Legacy Title]",
-    sourceDate,
-    number
-  };
-}
-
-function splitSections(text: string): SectionMap {
-  const sections: SectionMap = {};
-  let current = "unmapped";
-  sections[current] = "";
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = cleanLine(rawLine);
-    if (!line) continue;
-    const headingMatch = line.match(/^(?:\d+\.?\s+)?([A-Za-z][A-Za-z /&-]{2,40})(?:\.|:)?\s*$/);
-    const alias = headingMatch ? HEADING_ALIASES[headingMatch[1].toLowerCase()] : undefined;
-    if (alias) {
-      current = alias;
-      sections[current] = sections[current] ?? "";
-      continue;
-    }
-    sections[current] = `${sections[current] ?? ""}${sections[current] ? "\n" : ""}${line}`;
-  }
-
-  return sections;
-}
-
-function paragraphNodesFromText(text: string, fallback: string): ParagraphNode[] {
-  const lines = text
-    .split(/\n+/)
-    .map(cleanLine)
-    .filter(Boolean);
-  const source = lines.length ? lines : [fallback];
-  return source.map((line) => ({
-    text: line.replace(/^(?:\d+\.|[a-z]\.|\([a-z0-9]+\))\s*/i, ""),
-    children: []
-  }));
-}
-
-function referencesFromText(text: string): string[] {
-  return text
-    .split(/\n+/)
-    .map(cleanLine)
-    .filter(Boolean)
-    .map((line) => line.replace(/^(?:\([a-z]\)|[a-z]\.)\s+/i, ""))
-    .filter((line) => line.length > 6);
-}
-
 export function convertLegacyText(
   input: string,
   documentType: DocumentType = "regulation"
 ): LegacyConversion {
   const normalized = normalizeLegacyVerbiage(input);
-  const identity = detectLegacyIdentity(normalized.text, documentType);
-  const sections = splitSections(normalized.text);
+  const outline = extractLegacyOutline(normalized.text, documentType);
+  const identity = outline.identity;
   const spec = createDefaultSpec();
 
   spec.mode = "convert";
   spec.documentType = documentType;
   spec.publicationNumber = identity.number;
   spec.subject = identity.sourceTitle === "[Legacy Title]" ? "" : identity.sourceTitle;
-  spec.references = referencesFromText(sections.references ?? "").length
-    ? referencesFromText(sections.references ?? "")
-    : spec.references;
-  spec.sections.purpose = paragraphNodesFromText(
-    sections.purpose ?? "",
-    "This publication establishes local procedures for the converted legacy policy."
-  );
-  spec.sections.applicability = paragraphNodesFromText(
-    sections.applicability ?? "",
-    "This publication applies to General Leonard Wood Community Hospital, outlying clinics, and assigned or attached personnel."
-  );
+  if (identity.legacyProponent) {
+    spec.proponent = identity.legacyProponent;
+    spec.sections.proponentAndWaivers = [
+      {
+        text: `The proponent of this publication is ${identity.legacyProponent}. Waiver requests will route through the hospital chain of command to the approval authority.`,
+        children: []
+      }
+    ];
+  }
+  spec.references = outline.references.length ? outline.references : spec.references;
+  spec.sections.purpose = outline.purpose;
+  spec.sections.applicability = outline.applicability;
   spec.sections.canceledDocuments = [
     {
       text: `This GLWCH ${documentType === "regulation" ? "Regulation" : "Pamphlet"} cancels ${identity.sourceDesignation}, ${identity.sourceTitle}, ${identity.sourceDate}.`,
@@ -190,14 +47,12 @@ export function convertLegacyText(
   spec.sections.proceduresBrief = [
     { text: "Detailed procedures from the legacy publication are placed in Enclosure 3 for review.", children: [] }
   ];
-  spec.enclosures.responsibilities = paragraphNodesFromText(
-    sections.responsibilities ?? "",
-    "Review and enter the responsibilities from the legacy publication."
-  );
-  spec.enclosures.procedures = paragraphNodesFromText(
-    sections.procedures ?? sections.unmapped ?? "",
-    "Review and enter the procedures from the legacy publication."
-  );
+  spec.enclosures.responsibilities = outline.responsibilities.length
+    ? outline.responsibilities
+    : [{ text: "Review and enter the responsibilities from the legacy publication.", children: [] }];
+  spec.enclosures.procedures = outline.procedures.length
+    ? outline.procedures
+    : [{ text: "Review and enter the procedures from the legacy publication.", children: [] }];
   spec.legacy = {
     sourceDesignation: identity.sourceDesignation,
     sourceTitle: identity.sourceTitle,

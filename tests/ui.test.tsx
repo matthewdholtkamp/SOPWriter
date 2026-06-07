@@ -104,5 +104,9 @@ describe("SOP Writer UI", () => {
     expect(
       screen.getByText("I could not apply a structured AI conversion. SOP Writer used the rough converter.")
     ).toBeInTheDocument();
+    const undoButton = screen.getByRole("button", { name: "Undo last update" });
+    expect(undoButton).toBeEnabled();
+    await user.click(undoButton);
+    expect(screen.getByLabelText("Subject")).toHaveValue("");
   });
 });

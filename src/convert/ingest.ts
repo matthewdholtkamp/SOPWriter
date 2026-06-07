@@ -6,8 +6,6 @@ export function convertPastedLegacyText(text: string, documentType: DocumentType
   return convertLegacyText(text, documentType);
 }
 
-type MammothApi = typeof import("mammoth");
-type MammothInput = Parameters<MammothApi["extractRawText"]>[0];
 type PdfTextItem = { str: string; hasEOL?: boolean };
 
 function isTextItem(item: unknown): item is PdfTextItem {
@@ -23,21 +21,33 @@ function normalizeExtractedText(text: string): string {
 }
 
 async function extractDocxText(file: File): Promise<string> {
-  const mammothModule = (await import("mammoth")) as unknown as MammothApi & {
-    default?: MammothApi;
-  };
-  const mammoth = mammothModule.default ?? mammothModule;
-  const arrayBuffer = await file.arrayBuffer();
-  const runtime = globalThis as typeof globalThis & {
-    Buffer?: { from: (value: ArrayBuffer) => unknown };
-    process?: { versions?: { node?: string } };
-  };
-  const input =
-    runtime.process?.versions?.node && runtime.Buffer
-      ? ({ buffer: runtime.Buffer.from(arrayBuffer) } as MammothInput)
-      : ({ arrayBuffer } as MammothInput);
-  const result = await mammoth.extractRawText(input);
-  const text = normalizeExtractedText(result.value);
+  const { strFromU8, unzipSync } = await import("fflate");
+  const archive = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const documentXml = archive["word/document.xml"];
+  if (!documentXml) {
+    throw new Error("This .docx file did not contain readable document text.");
+  }
+  const xml = strFromU8(documentXml)
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<w:br\/>/g, "\n");
+  const paragraphs = xml.match(/<w:p[\s\S]*?<\/w:p>/g) ?? [];
+  const text = normalizeExtractedText(
+    paragraphs
+      .map((paragraph) =>
+        [...paragraph.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
+          .map((match) =>
+            match[1]
+              .replace(/&lt;/g, "<")
+              .replace(/&gt;/g, ">")
+              .replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'")
+              .replace(/&amp;/g, "&")
+          )
+          .join("")
+      )
+      .filter((paragraph) => paragraph.trim())
+      .join("\n")
+  );
   if (!text) {
     throw new Error("This .docx file did not contain readable text.");
   }

@@ -6,32 +6,46 @@ import { createSyntheticSpec } from "./fixtures";
 async function docxXml(spec = createSyntheticSpec()) {
   const archive = unzipSync(new Uint8Array(await (await buildDocx(spec)).arrayBuffer()));
   const text = (path: string) => strFromU8(archive[path]);
-  const headers = Object.keys(archive)
-    .filter((path) => /^word\/header\d+\.xml$/.test(path))
-    .map(text);
-  const footerName = Object.keys(archive).find((path) => /^word\/footer\d+\.xml$/.test(path));
   return {
+    archive,
     document: text("word/document.xml"),
-    firstHeader: headers.find((header) => header.includes("Defense Health Agency")) ?? "",
-    continuationHeader: headers.find((header) => header.includes("SUBJECT:")) ?? "",
-    footer: footerName ? text(footerName) : ""
+    numbering: text("word/numbering.xml"),
+    styles: text("word/styles.xml")
   };
 }
 
 describe("buildDocx", () => {
-  it("generates GLWCH identity, page settings, title page, and signature block", async () => {
+  it("generates GLWCH identity with the official template package parts preserved", async () => {
     const xml = await docxXml();
     expect(xml.document).toContain('w:w="12240"');
     expect(xml.document).toContain('w:h="15840"');
     expect(xml.document).toContain("GLWCH Regulation No. 40-43");
-    expect(xml.document).toContain("SUBJECT:  Fall Prevention Program");
-    expect(xml.document).toContain("References:  See Enclosure 1.");
+    expect(xml.document).toContain("SUBJECT:");
+    expect(xml.document).toContain("Fall Prevention Program");
+    expect(xml.document).toContain("References:");
+    expect(xml.document).toContain("See Enclosure 1.");
     expect(xml.document).toContain("MATTHEW D. HOLTKAMP");
     expect(xml.document).toContain('w:left="4680"');
     expect(xml.document).toContain("<w:titlePg/>");
-    expect(xml.firstHeader).not.toContain("Defense Health Agency");
-    expect(xml.continuationHeader).toContain("SUBJECT:  Fall Prevention Program");
-    expect(xml.footer).toContain("PAGE");
+    expect(Object.keys(xml.archive)).toEqual(expect.arrayContaining([
+      "word/header1.xml",
+      "word/header2.xml",
+      "word/header3.xml",
+      "word/footer9.xml",
+      "word/theme/theme1.xml",
+      "word/media/image1.png",
+      "customXml/item6.xml"
+    ]));
+    expect(xml.styles).toContain('w:styleId="Heading1"');
+    expect(xml.numbering).toContain("<w:abstractNum");
+  });
+
+  it("removes visible instructional template text from the final document body", async () => {
+    const xml = await docxXml();
+    expect(xml.document).not.toContain("The PSB enters date");
+    expect(xml.document).not.toContain("The Publication Systems Branch");
+    expect(xml.document).not.toContain("FOR DHA-PMs ONLY");
+    expect(xml.document).not.toContain("EDITING CHECKLIST");
   });
 
   it("renders DHA paragraph labels and enclosures", async () => {
@@ -70,7 +84,8 @@ describe("buildDocx", () => {
     );
     expect(xml.document).toContain("ENCLOSURE 1");
     expect(xml.document).toContain("REFERENCES");
-    expect(xml.document).toContain("(a)  DoD Directive");
+    expect(xml.document).toContain("(a)");
+    expect(xml.document).toContain("DoD Directive");
     expect(xml.document).toContain("ENCLOSURE 2");
     expect(xml.document).toContain("1.  ");
     expect(xml.document).toContain("Official.  ");
@@ -91,5 +106,30 @@ describe("buildDocx", () => {
     );
     expect(xml.document).not.toContain("CANCELED DOCUMENTS");
     expect(xml.document).toContain("4.  RESPONSIBILITIES");
+  });
+
+  it("preserves detailed converted fall-prevention content", async () => {
+    const spec = createSyntheticSpec({
+      enclosures: {
+        responsibilities: [
+          { heading: "Information Desk", text: "Staff will offer wheelchair assistance to customers identified as falls risk customers.", children: [] },
+          { heading: "Head Nurses and NCOICs", text: "Leaders will inspect patient care areas for safety issues and monitor trends.", children: [] },
+          { heading: "All Hospital Staff", text: "Personnel will maintain a safe patient care environment and report unsafe conditions.", children: [] }
+        ],
+        procedures: [
+          { heading: "Adult Falls Protocol", text: "Adult standard falls protocol will be implemented and documented.", children: [] },
+          { heading: "Pediatric Falls Protocol", text: "Pediatric standard falls protocol will be provided to all pediatric patients.", children: [] },
+          { heading: "Post-Fall Documentation", text: "Documentation will include injury, contributing factors, notifications, and follow-up plan.", children: [] }
+        ],
+        appendices: []
+      }
+    });
+    const xml = await docxXml(spec);
+    expect(xml.document).toContain("Information Desk");
+    expect(xml.document).toContain("Head Nurses and NCOICs");
+    expect(xml.document).toContain("All Hospital Staff");
+    expect(xml.document).toContain("Adult Falls Protocol");
+    expect(xml.document).toContain("Pediatric Falls Protocol");
+    expect(xml.document).toContain("Post-Fall Documentation");
   });
 });

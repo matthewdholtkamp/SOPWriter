@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from "react";
 import { convertPastedLegacyText, extractLegacyTextFromFile } from "./convert/ingest";
+import { extractLegacyOutline } from "./convert/legacyOutline";
 import type { AssistantMessage } from "./assistant/schema";
 import { createAssistantMessage, runSopAssistant } from "./assistant/session";
 import {
@@ -92,11 +93,15 @@ async function readTextFile(file: File): Promise<string> {
   return file.text();
 }
 
-function legacyAiConvertPrompt(legacyText: string): string {
+function legacyAiConvertPrompt(legacyText: string, documentType: DocumentType): string {
+  const outline = extractLegacyOutline(legacyText, documentType);
   return [
     "Map this legacy MEDDAC policy into the GLWCH DHA-format SOP structure.",
-    "Use the extracted legacy text below. Return an applyPatch response when enough content can be mapped. Use [TBD] for missing local facts and ask questions for facts that need human confirmation.",
+    "Use the structured legacy outline and extracted legacy text below. Return an applyPatch response when enough content can be mapped. Use [TBD] for missing local facts and ask questions for facts that need human confirmation.",
+    "Preserve every legacy responsibility and procedure. Do not summarize away operational content. Place responsibilities in Enclosure 2 and every numbered procedure section after legacy Responsibilities in Enclosure 3.",
     "Do not include PHI, patient details, classified content, or sensitive personal data.",
+    "Structured legacy outline:",
+    JSON.stringify(outline, null, 2),
     "Legacy policy text:",
     legacyText
   ].join("\n\n");
@@ -716,6 +721,7 @@ export default function App() {
       ...(assistantNotice?.warnings ?? [])
     ].filter(Boolean) as string[];
 
+    setAssistantUndoSpec(spec);
     setAssistantMessages((current) => [
       ...current,
       createAssistantMessage("user", "Convert legacy policy from pasted/uploaded text."),
@@ -751,7 +757,7 @@ export default function App() {
       const { appliedFields, nextSpec, response } = await runSopAssistant({
         messages: messagesForRequest,
         spec,
-        userText: legacyAiConvertPrompt(legacyText),
+        userText: legacyAiConvertPrompt(legacyText, spec.documentType),
         validationItems: validation.items
       });
 

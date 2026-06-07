@@ -33,6 +33,7 @@ const TARGETS: Record<string, { stage: SopStage; focusTarget?: string }> = {
   subject: { stage: "identity", focusTarget: "sop-subject" },
   "subject-acronym": { stage: "identity", focusTarget: "sop-subject" },
   references: { stage: "sections", focusTarget: "references-editor" },
+  proponent: { stage: "identity", focusTarget: "identity-stage" },
   signature: { stage: "identity", focusTarget: "signature-editor" },
   date: { stage: "identity", focusTarget: "sop-date" },
   "required-sections": { stage: "sections", focusTarget: "sections-editor" },
@@ -49,6 +50,7 @@ const TARGETS: Record<string, { stage: SopStage; focusTarget?: string }> = {
   "patient-id-emergency-deferral": { stage: "review", focusTarget: "compliance-panel" },
   "legacy-verbiage": { stage: "readiness", focusTarget: "readiness-panel" },
   "move-review": { stage: "readiness", focusTarget: "readiness-panel" },
+  "toc-review": { stage: "review", focusTarget: "compliance-panel" },
   "readiness-routing": { stage: "readiness", focusTarget: "readiness-panel" }
 };
 
@@ -112,6 +114,16 @@ function allText(spec: SopSpec): string {
   spec.glossary.acronyms.forEach((entry) => pieces.push(entry.term, entry.meaning));
   spec.glossary.definitions.forEach((entry) => pieces.push(entry.term, entry.definition));
   return pieces.join("\n");
+}
+
+function paragraphCount(spec: SopSpec): number {
+  let count = spec.references.length + spec.glossary.acronyms.length + spec.glossary.definitions.length;
+  for (const collection of allParagraphCollections(spec)) {
+    walk(collection, () => {
+      count += 1;
+    });
+  }
+  return count;
 }
 
 function hasUnexpandedAcronym(text: string): boolean {
@@ -201,6 +213,9 @@ export function validateSop(spec: SopSpec): ValidationResult {
       ? item("references", "References", "pass", "Enclosure 1 has at least one reference.")
       : item("references", "References required", "fail", "Every publication needs Enclosure 1 references.")
   );
+  if (!spec.proponent.trim() || /\[TBD\]|___/.test(spec.proponent)) {
+    items.push(item("proponent", "Proponent needs review", "warn", "Confirm the responsible department, directorate, or service line."));
+  }
 
   const requiredSections = [
     ["Purpose", spec.sections.purpose],
@@ -278,6 +293,9 @@ export function validateSop(spec: SopSpec): ValidationResult {
       ? item("move-review", "Move review needed", "warn", "Location, room, workflow, or phone language is present and must be reviewed for the new hospital.")
       : item("move-review", "Move review", "pass", "Move-sensitive procedure review is acknowledged or no obvious location terms were detected.")
   );
+  if (paragraphCount(spec) > 90) {
+    items.push(item("toc-review", "Table of contents review", "warn", "This publication is long enough that a table of contents may add value or be required by local review."));
+  }
   items.push(
     spec.signature.approvalAuthority === "commander" && !spec.readiness.deputyLaneReviewed
       ? item("readiness-routing", "Deputy lane review", "warn", "Commander signature requires review through the corresponding Deputy lane before Executive Officer routing.")
