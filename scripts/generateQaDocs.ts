@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import "./installDomGlobals";
 import { buildDocx } from "../src/generator/buildDocx";
 import { createDefaultSpec } from "../src/model/defaultSpec";
 

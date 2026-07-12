@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       includeAssets: ["assets/seals/*.png", "assets/seals/*.svg"],
       manifest: {
         name: "SOP Writer",
@@ -28,8 +31,7 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
-        navigateFallback: "index.html",
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,json}"]
       }
     })

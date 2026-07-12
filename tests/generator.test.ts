@@ -6,27 +6,56 @@ import { createSyntheticSpec } from "./fixtures";
 async function docxXml(spec = createSyntheticSpec()) {
   const archive = unzipSync(new Uint8Array(await (await buildDocx(spec)).arrayBuffer()));
   const text = (path: string) => strFromU8(archive[path]);
+  const visibleText = (xml: string) =>
+    [...xml.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)]
+      .map((match) =>
+        match[1]
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'")
+          .replace(/&amp;/g, "&")
+      )
+      .join("");
+  const document = text("word/document.xml");
   return {
     archive,
-    document: text("word/document.xml"),
+    document,
+    documentText: visibleText(document),
+    footer3: text("word/footer3.xml"),
+    footer5: text("word/footer5.xml"),
+    footer6: text("word/footer6.xml"),
+    footer7: text("word/footer7.xml"),
+    footer8: text("word/footer8.xml"),
+    header2: text("word/header2.xml"),
     numbering: text("word/numbering.xml"),
     styles: text("word/styles.xml")
   };
 }
 
 describe("buildDocx", () => {
-  it("generates GLWCH identity with the official template package parts preserved", async () => {
+  it("generates the official GLWCH cover and section package", async () => {
     const xml = await docxXml();
     expect(xml.document).toContain('w:w="12240"');
     expect(xml.document).toContain('w:h="15840"');
-    expect(xml.document).toContain("GLWCH Regulation No. 40-43");
-    expect(xml.document).toContain("SUBJECT:");
-    expect(xml.document).toContain("Fall Prevention Program");
-    expect(xml.document).toContain("References:");
-    expect(xml.document).toContain("See Enclosure 1.");
-    expect(xml.document).toContain("MATTHEW D. HOLTKAMP");
-    expect(xml.document).toContain('w:left="4680"');
+    expect(xml.documentText).toContain("Defense Health Agency");
+    expect(xml.documentText).toContain("General Leonard Wood Community Hospital");
+    expect(xml.documentText).toContain("REGULATION");
+    expect(xml.documentText).toContain("NUMBER 40-43");
+    expect(xml.documentText).toContain("SUBJECT:Fall Prevention Program");
+    expect(xml.documentText).toContain("References:See Enclosure 1.");
+    expect(xml.documentText).toContain("MATTHEW D. HOLTKAMP");
+    expect(xml.document).toContain('w:pos="4680"');
+    expect(xml.document).toContain('name="Straight Connector 1"');
+    expect(xml.document).toContain('name="Straight Connector 2"');
+    expect(xml.document).toContain('name="Straight Connector 3"');
     expect(xml.document).toContain("<w:titlePg/>");
+    expect(xml.document.match(/<w:sectPr/g)).toHaveLength(5);
+    expect(xml.document).not.toContain("<w:sdt");
+    const paragraphIds = [...xml.document.matchAll(/w14:paraId="([^"]+)"/g)].map(
+      (match) => match[1]
+    );
+    expect(new Set(paragraphIds).size).toBe(paragraphIds.length);
     expect(Object.keys(xml.archive)).toEqual(expect.arrayContaining([
       "word/header1.xml",
       "word/header2.xml",
@@ -40,12 +69,28 @@ describe("buildDocx", () => {
     expect(xml.numbering).toContain("<w:abstractNum");
   });
 
+  it("patches running headers and enclosure footers with final publication values", async () => {
+    const xml = await docxXml();
+    expect(xml.header2).toContain("GLWCH Reg 40-43");
+    expect(xml.header2).toContain("January 1, 2026");
+    expect(xml.header2).not.toContain("XXXX.XX");
+    expect(xml.footer3).not.toContain("DHA-");
+    expect(xml.footer3).not.toContain("template as of");
+    expect(xml.footer5).toContain("ENCLOSURE ");
+    expect(xml.footer5).toContain(">1<");
+    expect(xml.footer6).toContain("ENCLOSURE 2");
+    expect(xml.footer7).toContain("ENCLOSURE 3");
+    expect(xml.footer8).toContain("GLOSSARY");
+  });
+
   it("removes visible instructional template text from the final document body", async () => {
     const xml = await docxXml();
     expect(xml.document).not.toContain("The PSB enters date");
     expect(xml.document).not.toContain("The Publication Systems Branch");
     expect(xml.document).not.toContain("FOR DHA-PMs ONLY");
     expect(xml.document).not.toContain("EDITING CHECKLIST");
+    expect(xml.document).not.toContain("DHA Add Proponent");
+    expect(xml.document).not.toContain("NUMBER XXXX.XX");
   });
 
   it("renders DHA paragraph labels and enclosures", async () => {
@@ -82,21 +127,17 @@ describe("buildDocx", () => {
         }
       })
     );
-    expect(xml.document).toContain("ENCLOSURE 1");
-    expect(xml.document).toContain("REFERENCES");
-    expect(xml.document).toContain("(a)");
-    expect(xml.document).toContain("DoD Directive");
-    expect(xml.document).toContain("ENCLOSURE 2");
-    expect(xml.document).toContain("1.  ");
-    expect(xml.document).toContain("Official.  ");
-    expect(xml.document).toContain("The official will act.");
-    expect(xml.document).toContain("a.  ");
-    expect(xml.document).toContain("First child.");
-    expect(xml.document).toContain("(1)  ");
-    expect(xml.document).toContain("Nested one.");
-    expect(xml.document).toContain("ENCLOSURE 3");
-    expect(xml.document).toContain("APPENDIX: FALL RISK TOOL");
-    expect(xml.document).toContain("Record the score.");
+    expect(xml.documentText).toContain("ENCLOSURE 1");
+    expect(xml.documentText).toContain("REFERENCES");
+    expect(xml.documentText).toContain("(a)DoD Directive");
+    expect(xml.documentText).toContain("ENCLOSURE 2");
+    expect(xml.documentText).toContain("1.  Official.  The official will act.");
+    expect(xml.documentText).toContain("a.  First child.");
+    expect(xml.documentText).toContain("(1)  Nested one.");
+    expect(xml.documentText).toContain("ENCLOSURE 3");
+    expect(xml.documentText).toContain("APPENDIXFALL RISK TOOL");
+    expect(xml.documentText).toContain("Record the score.");
+    expect(xml.document).toContain('<w:u w:val="single"/>');
   });
 
   it("omits optional sections and renumbers visible sections", async () => {
@@ -104,8 +145,8 @@ describe("buildDocx", () => {
     const xml = await docxXml(
       createSyntheticSpec({ sections: { ...base.sections, canceledDocuments: null } })
     );
-    expect(xml.document).not.toContain("CANCELED DOCUMENTS");
-    expect(xml.document).toContain("4.  RESPONSIBILITIES");
+    expect(xml.documentText).not.toContain("CANCELED DOCUMENTS");
+    expect(xml.documentText).toContain("4.  RESPONSIBILITIES");
   });
 
   it("preserves detailed converted fall-prevention content", async () => {

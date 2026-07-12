@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "qa:docs": "vite-node scripts/generateQaDocs.ts",
     "stress:ask": "vite-node scripts/stressTestAskDrHoltkamp.ts",
-    "test": "vitest run",
+    "test": "vitest run --pool=forks --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest",
     "test:ui": "vitest run tests/ui.test.tsx"
   },

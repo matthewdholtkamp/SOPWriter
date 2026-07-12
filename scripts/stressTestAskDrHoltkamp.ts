@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import "./installDomGlobals";
 import { applyAssistantPatch, appliedFieldsFromResponse } from "../src/assistant/apply";
 import { requestSopAssistant } from "../src/assistant/client";
 import type { AssistantMessage } from "../src/assistant/schema";
