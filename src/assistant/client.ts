@@ -518,7 +518,7 @@ export async function requestSopAssistant({
         }
       ],
       generationConfig: {
-        temperature: 0.35,
+        thinkingConfig: { thinkingLevel: "low" },
         responseMimeType: "application/json"
       }
     })

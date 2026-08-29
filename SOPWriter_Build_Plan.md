@@ -400,8 +400,8 @@ This is the SOP-domain version of ArmyMemo's `src/assistant/` (`client.ts`, `sch
   Gemini proxy that hides the API key and accepts `{ model, fallbackModel, stream, systemInstruction,
   contents, generationConfig }`. **No new worker is needed**; the system prompt lives client-side. Add the
   worker origin to the CSP `connect-src` (§11).
-- Primary model `gemini-3.1-flash-lite`, fallback `gemini-2.5-flash` (same as ArmyMemo's `schema.ts`).
-- `generationConfig`: `temperature ~0.3`, `responseMimeType: "application/json"`, and a
+- Primary model `gemini-3.5-flash-lite`, fallback `gemini-3.7-flash` (same as ArmyMemo's `schema.ts`).
+- `generationConfig`: `thinkingConfig.thinkingLevel: "low"`, `responseMimeType: "application/json"`, and a
   `responseSchema` describing the patch (Gemini structured output). Reuse ArmyMemo's recursive
   `paragraphResponseSchema(depth)` helper for the `ParagraphNode` tree (cap recursion at depth 5).
 - **Robustness (copy ArmyMemo `client.ts`):** `extractJson` (strip ``` fences / find first `{`…`}`),
